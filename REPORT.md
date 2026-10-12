@@ -1,3 +1,60 @@
+# Final Report — ls Assignment (v1.1.0–v1.6.0)
+
+## 1. Difference Between `stat()` and `lstat()`
+
+`stat()` gets information about the file a symbolic link points to. `lstat()` gets information about the symbolic link itself. In `ls`, `lstat()` is useful when we need to identify symbolic links correctly.
+
+## 2. Understanding `st_mode` and Bitwise Operators
+
+The `st_mode` field stores file type and permission information. Macros such as `S_ISDIR(mode)` check whether a file is a directory. Bitwise AND (`&`) checks permission bits, such as `mode & S_IRUSR` for the owner's read permission.
+
+## 3. Down-Then-Across Column Display
+
+First, calculate the number of rows and columns. Then print entries by moving down each column before moving to the next column. A single loop is insufficient because the entries must be arranged by rows and columns rather than printed in simple list order.
+
+## 4. Purpose of `ioctl()`
+
+`ioctl()` with `TIOCGWINSZ` obtains the terminal width. Without detecting the width, a fixed 80-column setting may cause output to wrap incorrectly or leave too much empty space on terminals of different sizes.
+
+## 5. Vertical vs. Horizontal Display
+
+Vertical display requires calculating the number of columns and rows and mapping entries to positions. Horizontal display is simpler because it prints entries in order and wraps when the terminal width is reached. Vertical display needs more pre-calculation.
+
+## 6. Managing Display Modes
+
+The program uses command-line options to select the display function. `-l` calls `do_long_ls()`, `-x` calls `do_x_ls()`, and the default calls `do_ls()`. The `-R` option enables recursive listing.
+
+## 7. Why Store Entries Before Sorting?
+
+All directory names are stored in a dynamically allocated array so `qsort()` can sort them before printing. For millions of files, this can use substantial memory and take additional time. Memory allocation may also fail.
+
+## 8. Purpose of the `qsort()` Comparison Function
+
+The comparison function compares two filenames and returns a negative value, zero, or a positive value. Its signature is:
+
+`int compare_names(const void *a, const void *b)`
+
+It uses `const void *` because `qsort()` is a general-purpose sorting function that can sort different data types. The pointers are converted to the correct type inside the function.
+
+## 9. ANSI Escape Codes
+
+ANSI escape codes change terminal text colors and styles. The code `\033[0;32m` starts green text, and `\033[0m` resets the style.
+
+Example:
+
+`printf("\033[0;32mHello\033[0m");`
+
+## 10. Executable Permission Bits
+
+The executable permission bits are `S_IXUSR`, `S_IXGRP`, and `S_IXOTH`. They indicate whether the owner, group, or others have execute permission. Bitwise AND (`&`) can check each bit.
+
+## 11. Base Case in Recursion
+
+A base case is the condition that stops recursion. In recursive `ls`, recursion stops when a directory cannot be opened or when no further subdirectories are found to visit. The program also skips `.` and `..` to avoid repeatedly visiting the same directories.
+
+## 12. Constructing Full Paths
+
+A full path identifies a subdirectory relative to its parent, such as `parent_dir/subdir`. Without the parent path, `do_ls("subdir")` may look for a directory relative to the current working directory instead of the intended parent. Constructing the full path ensures the correct directory is visited.
 # Operating Systems Assignment 02
 ## Feature 2: Long Listing (v1.1.0)
 
