@@ -370,11 +370,14 @@ void print_permissions(mode_t mode)
     printf("%s", permissions);
 }
 
+
 void do_long_ls(const char *dir)
 {
-    struct dirent *entry;
-    struct stat file_info;
     DIR *dp = opendir(dir);
+    struct dirent *entry;
+    struct stat info;
+    char **names = NULL;
+    size_t count = 0, capacity = 0, i;
     char path[PATH_MAX];
     char *modified_time;
     struct passwd *user;
@@ -383,63 +386,87 @@ void do_long_ls(const char *dir)
 
     if (dp == NULL)
     {
-        fprintf(stderr, "Cannot open directory: %s\n", dir);
+        perror(dir);
         return;
     }
 
-    /*
-       First pass: calculate total allocated blocks.
-    */
     errno = 0;
 
     while ((entry = readdir(dp)) != NULL)
     {
+        char *name;
+        size_t length;
+
         if (entry->d_name[0] == '.')
             continue;
 
-        if (snprintf(path, sizeof(path), "%s/%s",
-                     dir, entry->d_name) >= (int)sizeof(path))
-            continue;
+        length = strlen(entry->d_name);
+        name = malloc(length + 1);
 
-        if (lstat(path, &file_info) == 0)
-            total_blocks += file_info.st_blocks;
+        if (name == NULL)
+        {
+            perror("malloc");
+            break;
+        }
+
+        strcpy(name, entry->d_name);
+
+        if (count == capacity)
+        {
+            size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
+            char **temp = realloc(names, new_capacity * sizeof(char *));
+
+            if (temp == NULL)
+            {
+                free(name);
+                perror("realloc");
+                break;
+            }
+
+            names = temp;
+            capacity = new_capacity;
+        }
+
+        names[count++] = name;
+
+        if (snprintf(path, sizeof(path), "%s/%s", dir, name)
+            < (int)sizeof(path) &&
+            lstat(path, &info) == 0)
+            total_blocks += info.st_blocks;
     }
 
+    if (errno != 0)
+        perror("readdir");
+
+    closedir(dp);
+
+    qsort(names, count, sizeof(char *), compare_names);
     printf("total %ld\n", total_blocks / 2);
 
-    /*
-       Second pass: print each entry.
-    */
-    rewinddir(dp);
-    errno = 0;
-
-    while ((entry = readdir(dp)) != NULL)
+    for (i = 0; i < count; i++)
     {
-        if (entry->d_name[0] == '.')
+        if (snprintf(path, sizeof(path), "%s/%s", dir, names[i])
+            >= (int)sizeof(path))
             continue;
 
-        if (snprintf(path, sizeof(path), "%s/%s",
-                     dir, entry->d_name) >= (int)sizeof(path))
-            continue;
-
-        if (lstat(path, &file_info) == -1)
+        if (lstat(path, &info) == -1)
         {
-            perror(entry->d_name);
+            perror(names[i]);
             continue;
         }
 
-        user = getpwuid(file_info.st_uid);
-        group = getgrgid(file_info.st_gid);
+        user = getpwuid(info.st_uid);
+        group = getgrgid(info.st_gid);
 
-        print_permissions(file_info.st_mode);
+        print_permissions(info.st_mode);
 
         printf(" %2lu %-8s %-8s %8lld ",
-               (unsigned long)file_info.st_nlink,
+               (unsigned long)info.st_nlink,
                user ? user->pw_name : "?",
                group ? group->gr_name : "?",
-               (long long)file_info.st_size);
+               (long long)info.st_size);
 
-        modified_time = ctime(&file_info.st_mtime);
+        modified_time = ctime(&info.st_mtime);
 
         if (modified_time != NULL)
         {
@@ -447,15 +474,13 @@ void do_long_ls(const char *dir)
             printf("%.12s ", modified_time + 4);
         }
         else
-        {
             printf("unknown time ");
-        }
 
-        printf("%s\n", entry->d_name);
+        printf("%s\n", names[i]);
     }
 
-    if (errno != 0)
-        perror("readdir failed");
+    for (i = 0; i < count; i++)
+        free(names[i]);
 
-    closedir(dp);
+    free(names);
 }
