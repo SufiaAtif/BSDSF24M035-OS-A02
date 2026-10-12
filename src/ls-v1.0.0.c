@@ -17,18 +17,23 @@ void do_ls(const char *dir);
 void do_long_ls(const char *dir);
 void print_permissions(mode_t mode);
 
+void do_x_ls(const char *dir);
+
 int main(int argc, char *argv[])
 {
     int option;
     int long_format = 0;
+    int horizontal_format = 0;
 
-    while ((option = getopt(argc, argv, "l")) != -1)
+    while ((option = getopt(argc, argv, "lx")) != -1)
     {
         if (option == 'l')
             long_format = 1;
+        else if (option == 'x')
+            horizontal_format = 1;
         else
         {
-            fprintf(stderr, "Usage: %s [-l] [directory ...]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-l] [-x] [directory ...]\n", argv[0]);
             return 1;
         }
     }
@@ -37,6 +42,8 @@ int main(int argc, char *argv[])
     {
         if (long_format)
             do_long_ls(".");
+        else if (horizontal_format)
+            do_x_ls(".");
         else
             do_ls(".");
     }
@@ -48,6 +55,8 @@ int main(int argc, char *argv[])
 
             if (long_format)
                 do_long_ls(argv[i]);
+            else if (horizontal_format)
+                do_x_ls(argv[i]);
             else
                 do_ls(argv[i]);
 
@@ -190,6 +199,125 @@ void do_ls(const char *dir)
 
         putchar('\n');
     }
+
+    for (index = 0; index < count; index++)
+        free(names[index]);
+
+    free(names);
+}
+
+void do_x_ls(const char *dir)
+{
+    struct dirent *entry;
+    DIR *dp = opendir(dir);
+    char **names = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    size_t max_length = 0;
+    size_t column_width;
+    size_t index;
+    size_t current_position = 0;
+    int terminal_width = 80;
+    struct winsize window;
+
+    if (dp == NULL)
+    {
+        fprintf(stderr, "Cannot open directory: %s\n", dir);
+        return;
+    }
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &window) == 0
+        && window.ws_col > 0)
+    {
+        terminal_width = window.ws_col;
+    }
+
+    errno = 0;
+
+    while ((entry = readdir(dp)) != NULL)
+    {
+        char *name;
+        size_t length;
+
+        if (entry->d_name[0] == '.')
+            continue;
+
+        length = strlen(entry->d_name);
+        name = malloc(length + 1);
+
+        if (name == NULL)
+        {
+            perror("malloc");
+            break;
+        }
+
+        strcpy(name, entry->d_name);
+
+        if (count == capacity)
+        {
+            size_t new_capacity = (capacity == 0) ? 16 : capacity * 2;
+            char **new_names = realloc(
+                names, new_capacity * sizeof(char *));
+
+            if (new_names == NULL)
+            {
+                free(name);
+                perror("realloc");
+                break;
+            }
+
+            names = new_names;
+            capacity = new_capacity;
+        }
+
+        names[count++] = name;
+
+        if (length > max_length)
+            max_length = length;
+    }
+
+    if (errno != 0)
+        perror("readdir failed");
+
+    closedir(dp);
+
+    if (count == 0)
+    {
+        free(names);
+        return;
+    }
+
+    qsort(names, count, sizeof(char *), compare_names);
+
+    column_width = max_length + 2;
+
+    /* Print horizontally, wrapping when the next column will not fit. */
+    for (index = 0; index < count; index++)
+    {
+        size_t length = strlen(names[index]);
+
+        if (current_position > 0 &&
+            current_position + column_width > (size_t)terminal_width)
+        {
+            putchar('\n');
+            current_position = 0;
+        }
+
+        printf("%s", names[index]);
+        current_position += length;
+
+        if (index + 1 < count)
+        {
+            size_t spaces = column_width - length;
+
+            while (spaces-- > 0)
+                putchar(' ');
+
+            current_position += column_width - length;
+        }
+    }
+
+    putchar('\n');
 
     for (index = 0; index < count; index++)
         free(names[index]);
