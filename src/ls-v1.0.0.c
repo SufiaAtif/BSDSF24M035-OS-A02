@@ -16,6 +16,7 @@
 void do_ls(const char *dir);
 void do_long_ls(const char *dir);
 void print_permissions(mode_t mode);
+void print_colored_name(const char *dir, const char *name);
 
 void do_x_ls(const char *dir);
 
@@ -73,6 +74,45 @@ int compare_names(const void *a, const void *b)
     const char *name_a = *(const char **)a;
     const char *name_b = *(const char **)b;
     return strcmp(name_a, name_b);
+}
+
+
+#define COLOR_RESET   "\033[0m"
+#define COLOR_BLUE    "\033[0;34m"
+#define COLOR_GREEN   "\033[0;32m"
+#define COLOR_RED     "\033[0;31m"
+#define COLOR_PINK    "\033[0;35m"
+#define COLOR_REVERSE "\033[7m"
+
+void print_colored_name(const char *dir, const char *name)
+{
+    char path[PATH_MAX];
+    struct stat info;
+    const char *color = COLOR_RESET;
+    size_t length = strlen(name);
+
+    if (snprintf(path, sizeof(path), "%s/%s", dir, name)
+        < (int)sizeof(path) && lstat(path, &info) == 0)
+    {
+        if (S_ISLNK(info.st_mode))
+            color = COLOR_PINK;
+        else if (S_ISCHR(info.st_mode) || S_ISBLK(info.st_mode)
+                 || S_ISFIFO(info.st_mode) || S_ISSOCK(info.st_mode))
+            color = COLOR_REVERSE;
+        else if (S_ISDIR(info.st_mode))
+            color = COLOR_BLUE;
+        else if (info.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))
+            color = COLOR_GREEN;
+        else if ((length >= 4 &&
+                  strcmp(name + length - 4, ".tar") == 0) ||
+                 (length >= 3 &&
+                  strcmp(name + length - 3, ".gz") == 0) ||
+                 (length >= 4 &&
+                  strcmp(name + length - 4, ".zip") == 0))
+            color = COLOR_RED;
+    }
+
+    printf("%s%s%s", color, name, COLOR_RESET);
 }
 
 void do_ls(const char *dir)
@@ -183,7 +223,7 @@ void do_ls(const char *dir)
             if (index >= count)
                 continue;
 
-            printf("%s", names[index]);
+            print_colored_name(dir, names[index]);
 
             next_index = (col + 1) * rows + row;
 
@@ -303,7 +343,7 @@ void do_x_ls(const char *dir)
             current_position = 0;
         }
 
-        printf("%s", names[index]);
+        print_colored_name(dir, names[index]);
         current_position += length;
 
         if (index + 1 < count)
@@ -476,7 +516,8 @@ void do_long_ls(const char *dir)
         else
             printf("unknown time ");
 
-        printf("%s\n", names[i]);
+        print_colored_name(dir, names[i]);
+        putchar('\n');
     }
 
     for (i = 0; i < count; i++)
